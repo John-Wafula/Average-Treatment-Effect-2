@@ -1,0 +1,177 @@
+---
+title: "R markdown"
+author: ".."
+date: "11/25/2021"
+output: html_document
+---
+
+```{r}
+library(haven)
+data<-read_dta("C:/Users/Admin/Downloads/440136784_trc_data_3411635738307577.dta")
+head(data)
+```
+
+Question 3a)
+
+```{r}
+set.seed(210)
+library(tidyverse)
+library(cowplot)
+n <- 1000 # some population with 1000 observations
+epsilon <- rnorm(n,mean=0,sd=1) # just a simple random error which we don't observe
+X_underlying <- runif(n,min=-1,max=1)
+X <- ifelse(X_underlying>0, 1, 0) # X is something super simple, an indicator variable which is 1 if X_underlying is positive and 0 otherwise
+A <- runif(n,min=5,max=6) # A is also something super simple, a uniform random variable living in [5,6]
+
+Y <- 1 + 5*X - A + epsilon # Y is a simple linear function of X and A
+
+dataset <- data.frame(Y=Y, X=X, A=A) # Let's put this together in a dataframe. We don't include epsilon since it's an unobserved random error term.
+```
+
+```{r}
+E_Y_X_1 <- dataset %>% filter(X==1) %>% summarise(conditional_mean = mean(Y))
+E_Y_X_0 <- dataset %>% filter(X==0) %>% summarise(conditional_mean = mean(Y))
+ATE_filter <- E_Y_X_1 - E_Y_X_0
+names(ATE_filter) <- c("ATE_filter")
+ATE_filter
+```
+
+```{r}
+t.test(dataset$Y[X==1], dataset$Y[X==0])
+```
+
+## Part b)
+
+The exposed respondents and unexposed respondents differ significantly by value of their parameters the respondents are good predictors an have a significant p-value as compared to the exposed respondents.This is caused by the nature in which they occur.
+
+## Par c)
+```{r}
+library(twang)
+data(iptwExWide)
+iptw.Ex <- iptw(list(tx1 ~ use0 + gender + age,
+ tx2 ~ use1 + use0 + tx1 + gender + age,
+ tx3 ~ use2 + use1 + use0 + tx2 + tx1 + gender + age),
+ timeInvariant ~ gender + age,
+ data = iptwExWide,
+ cumulative = FALSE,
+ priorTreatment = FALSE,
+ verbose = FALSE,
+ stop.method = "es.max",
+ n.trees = 5000)
+```
+
+```{r}
+plot(iptw.Ex, plots = 1)
+```
+
+## Part d
+
+```{r}
+unstabWt1 <- get.weights.unstab(iptw.Ex)
+ library(survey)
+ nTx <- with(iptwExWide, tx1 + tx2 + tx3)
+ outDatUnstab <- data.frame(outcome = iptwExWide$outcome,
+ nTx,
+ wt = unstabWt1$es.max.ATE)
+ sv1unstab <- svydesign(~1, weights = ~wt, data = outDatUnstab)
+ fitUnstab <- svyglm(outcome ~ nTx, sv1unstab)
+ coef(fitUnstab)
+confint(fitUnstab)
+```
+Since our data trc_data it is observed that the true treatment effect is -0.987.It is observed that the true treatment efectcovers the pronspensity score-weighted estimates cover.
+
+For the sake of extracting valid comparisons we investigate the we will then report the estimate and the corresponding confidence interval
+
+```{r}
+fitList <- list(glm(tx1 ~ 1, family = binomial, data = iptwExWide),
+glm(tx2 ~ tx1, family = binomial, data = iptwExWide),
+glm(tx3 ~ tx1 + tx2, family = binomial, data = iptwExWide))
+numWt <- get.weights.num(iptw.Ex, fitList)
+stabWt1 <- unstabWt1 * numWt
+
+outDatStab <- data.frame(outcome = iptwExWide$outcome,
+nTx,
+wt = stabWt1$es.max.ATE)
+sv1stab <- svydesign(~1, weights = ~wt, data = outDatStab)
+fitStab <- svyglm(outcome ~ nTx, sv1stab)
+confint(fitStab)
+```
+
+## Question 4 
+
+### Part a)
+
+```{r}
+library(Matching)
+ #NOT RUN {
+# Replication of Dehejia and Wahba psid3 model
+#
+# Dehejia, Rajeev and Sadek Wahba. 1999.``Causal Effects in
+# Non-Experimental Studies: Re-Evaluating the Evaluation of Training
+# Programs.''Journal of the American Statistical Association 94 (448):
+# 1053-1062.
+
+data(lalonde)
+
+#
+# Estimate the propensity model
+#
+glm1  <- glm(treat~age + I(age^2) + educ + I(educ^2) + black +
+             hisp + married + nodegr + re74  + I(re74^2) + re75 + I(re75^2) +
+             u74 + u75, family=binomial, data=lalonde)
+
+
+#
+#save data objects
+#
+X  <- glm1$fitted
+Y  <- lalonde$re78
+Tr  <- lalonde$treat
+
+#
+# one-to-one matching with replacement (the "M=1" option).
+# Estimating the treatment effect on the treated (the "estimand" option defaults to ATT).
+#
+rr  <- Match(Y=Y, Tr=Tr, X=X, M=1);
+summary(rr)
+
+# Let's check the covariate balance
+# 'nboots' is set to small values in the interest of speed.
+# Please increase to at least 500 each for publication quality p-values.
+mb  <- MatchBalance(treat~age + I(age^2) + educ + I(educ^2) + black +
+                    hisp + married + nodegr + re74  + I(re74^2) + re75 + I(re75^2) +
+                    u74 + u75, data=lalonde, match.out=rr, nboots=10)
+# }
+```
+
+## Part b
+
+```{r}
+summary(glm1)
+```
+## Part C
+
+```{r}
+summary(sv1stab)
+```
+
+There was no increase in standard error change of the above model.
+
+## Part d
+
+```{r}
+data(mnIptwExWide)
+ mniptw.Ex <- iptw(list(tx1 ~ use0, tx2 ~ use1, tx3 ~ use2),
+timeInvariant ~ gender + age,
+data = mnIptwExWide,
+
+cumulative = TRUE,
+riorTreatment = TRUE,
+verbose = FALSE,
+stop.method = "es.max",
+n.trees = 5000)
+```
+
+```{r}
+summary(mniptw.Ex)
+```
